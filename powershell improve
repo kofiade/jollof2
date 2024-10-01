@@ -1,0 +1,100 @@
+# Define Variables
+$repoUrl = "https://github.com/kofiade/jollof2.git"  # URL of the repository
+$projectPath = "C:\path\to\deploy\jollof2"  # Adjust to your desired clone directory
+$branch = "main"  # The branch to pull from
+$webRoot = "C:\inetpub\wwwroot"  # Default IIS web root for deployment
+$gitInstallerPath = "$env:TEMP\Git-Installer.exe"  # Temp path for Git installer
+
+# Function to check if Git is installed
+function Check-GitInstalled {
+    try {
+        git --version > $null 2>&1
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Step 1: Check if IIS is Installed, Install if Not
+$iisInstalled = Get-WindowsFeature -Name "Web-Server"
+
+if (-not $iisInstalled.Installed) {
+    Write-Host "IIS is not installed. Installing IIS..."
+    Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+    if ((Get-WindowsFeature -Name "Web-Server").Installed) {
+        Write-Host "IIS installation complete."
+    } else {
+        Write-Host "IIS installation failed. Please check the server setup."
+        exit 1
+    }
+} else {
+    Write-Host "IIS is already installed."
+}
+
+# Step 2: Check if Git is Installed, Install if Not
+if (-not (Check-GitInstalled)) {
+    Write-Host "Git is not installed. Downloading and installing Git..."
+
+    # Download Git Installer
+    try {
+        Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.1/Git-2.42.0-64-bit.exe" -OutFile $gitInstallerPath
+    } catch {
+        Write-Host "Failed to download Git installer. Please check your network connection."
+        exit 1
+    }
+
+    # Install Git silently
+    Start-Process -FilePath $gitInstallerPath -ArgumentList "/silent" -Wait
+
+    # Verify installation
+    if (Check-GitInstalled) {
+        Write-Host "Git installation complete."
+    } else {
+        Write-Host "Git installation failed. Please check manually."
+        exit 1
+    }
+} else {
+    Write-Host "Git is already installed."
+}
+
+# Step 3: Clone or Pull Latest Code from Repository
+if (Test-Path $projectPath) {
+    Write-Host "Repository already exists. Pulling the latest files from the branch '$branch'..."
+    cd $projectPath
+    try {
+        git pull origin $branch
+    } catch {
+        Write-Host "Failed to pull latest code. Please check the repository or branch settings."
+        exit 1
+    }
+} else {
+    Write-Host "Cloning the repository..."
+    try {
+        git clone $repoUrl $projectPath
+        cd $projectPath
+    } catch {
+        Write-Host "Failed to clone repository. Please check the URL and network connection."
+        exit 1
+    }
+}
+
+# Step 4: Copy Files to IIS Web Root
+Write-Host "Deploying files to IIS web root: $webRoot"
+try {
+    Copy-Item -Path "$projectPath\*" -Destination $webRoot -Recurse -Force
+} catch {
+    Write-Host "Failed to copy files to the web root. Please check permissions or the file paths."
+    exit 1
+}
+
+# Step 5: Restart IIS to Apply Changes
+Write-Host "Restarting IIS..."
+try {
+    iisreset
+    Write-Host "IIS restart successful. Deployment complete."
+} catch {
+    Write-Host "Failed to restart IIS. Please check IIS services manually."
+    exit 1
+}
+
+Write-Host "The website should now be available at http://localhost"
