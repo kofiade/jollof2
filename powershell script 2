@@ -1,0 +1,36 @@
+# PowerShell script to install IIS, Git, and download a GitHub repository
+
+# Function to check if script is running as administrator
+function Test-Administrator {
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent()
+    (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+}
+
+# Check if script is running as administrator
+if (-not (Test-Administrator)) {
+    Write-Host "This script needs to be run as an Administrator. Please restart PowerShell as an Administrator and try again."
+    exit
+}
+
+# Install IIS
+Write-Host "Installing IIS..."
+Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+
+# Install Git
+Write-Host "Installing Git..."
+$gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.41.0.windows.1/Git-2.41.0-64-bit.exe"
+$gitInstaller = "$env:TEMP\GitInstaller.exe"
+Invoke-WebRequest -Uri $gitUrl -OutFile $gitInstaller
+Start-Process -FilePath $gitInstaller -Args "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS=`"icons,ext\reg\shellhere,assoc,assoc_sh`"" -Wait
+Remove-Item $gitInstaller
+
+# Refresh environment variables
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# Clone the GitHub repository
+Write-Host "Cloning the GitHub repository..."
+$repoUrl = "https://github.com/kofiade/jollof2.git"
+$destinationPath = "C:\inetpub\wwwroot\jollof2"
+git clone $repoUrl $destinationPath
+
+Write-Host "Script execution completed."
