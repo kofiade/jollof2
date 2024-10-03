@@ -1,36 +1,69 @@
-# PowerShell script to install IIS, Git, and download a GitHub repository
-
-# Function to check if script is running as administrator
-function Test-Administrator {
-    $user = [Security.Principal.WindowsIdentity]::GetCurrent()
-    (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
-}
-
-# Check if script is running as administrator
-if (-not (Test-Administrator)) {
-    Write-Host "This script needs to be run as an Administrator. Please restart PowerShell as an Administrator and try again."
-    exit
-}
-
-# Install IIS
-Write-Host "Installing IIS..."
-Install-WindowsFeature -Name Web-Server -IncludeManagementTools
-
-# Install Git
-Write-Host "Installing Git..."
-$gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.41.0.windows.1/Git-2.41.0-64-bit.exe"
-$gitInstaller = "$env:TEMP\GitInstaller.exe"
-Invoke-WebRequest -Uri $gitUrl -OutFile $gitInstaller
-Start-Process -FilePath $gitInstaller -Args "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS=`"icons,ext\reg\shellhere,assoc,assoc_sh`"" -Wait
-Remove-Item $gitInstaller
-
-# Refresh environment variables
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-
-# Clone the GitHub repository
-Write-Host "Cloning the GitHub repository..."
+# Define Variables
 $repoUrl = "https://github.com/kofiade/jollof2.git"
-$destinationPath = "C:\inetpub\wwwroot\jollof2"
-git clone $repoUrl $destinationPath
+$projectPath = "C:\path\to\deploy\jollof2"  # Adjust this to where you want to clone the repo
+$branch = "main"  # Branch to pull from
+$webRoot = "C:\inetpub\wwwroot"  # Default IIS web root
+$gitInstallerPath = "$env:TEMP\Git-Installer.exe"  # Path to save the Git installer
 
-Write-Host "Script execution completed."
+# Function to check if Git is installed
+function Check-GitInstalled {
+    try {
+        git --version -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Step 1: Check if IIS is Installed, Install if Not
+$iisInstalled = Get-WindowsFeature -Name "Web-Server"
+
+if ($iisInstalled.Installed -eq $false) {
+    Write-Host "IIS is not installed. Installing IIS..."
+    Install-WindowsFeature -name Web-Server -IncludeManagementTools
+    Write-Host "IIS installation complete."
+} else {
+    Write-Host "IIS is already installed."
+}
+
+# Step 2: Check if Git is Installed, Install if Not
+if (-not (Check-GitInstalled)) {
+    Write-Host "Git is not installed. Downloading and installing Git..."
+    
+    # Download Git Installer
+    Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.1/Git-2.42.0-64-bit.exe" -OutFile $gitInstallerPath
+    
+    # Install Git silently
+    Start-Process -FilePath $gitInstallerPath -ArgumentList "/silent" -Wait
+    
+    # Verify installation
+    if (Check-GitInstalled) {
+        Write-Host "Git installation complete."
+    } else {
+        Write-Host "Git installation failed. Please check manually."
+        exit 1
+    }
+} else {
+    Write-Host "Git is already installed."
+}
+
+# Step 3: Clone or Pull Latest Code from Repository
+if (Test-Path $projectPath) {
+    Write-Host "Repository already exists. Pulling the latest HTML/CSS files..."
+    Set-Location $projectPath
+    git pull origin $branch
+} else {
+    Write-Host "Cloning the repository..."
+    git clone $repoUrl $projectPath
+    Set-Location $projectPath
+}
+
+# Step 4: Copy Files to IIS Web Root
+Write-Host "Deploying HTML/CSS files to IIS web root..."
+Copy-Item -Path "$projectPath\*" -Destination $webRoot -Recurse -Force
+
+# Step 5: Restart IIS to Apply Changes
+Write-Host "Restarting IIS..."
+iisreset
+
+Write-Host "Deployment complete. The site should be available at http://localhost"
